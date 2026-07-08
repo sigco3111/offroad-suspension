@@ -1,0 +1,1085 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>2D 오프로드 서스펜션 시뮬레이터 — Matter.js</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23c0392b'/%3E%3Ccircle cx='10' cy='22' r='5' fill='%231a1a1a'/%3E%3Ccircle cx='22' cy='22' r='5' fill='%231a1a1a'/%3E%3C/svg%3E" />
+
+  <!-- poly-decomp MUST load before matter.js for concave Bodies.fromVertices -->
+  <script src="https://cdn.jsdelivr.net/npm/poly-decomp@0.3.0/build/decomp.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/matter-js@0.20.0/build/matter.min.js"></script>
+
+  <style>
+    :root {
+      --hud-bg: rgba(15, 18, 28, 0.78);
+      --hud-fg: #f4f6fb;
+      --hud-mute: #9aa3b8;
+      --hud-warn: #ff5757;
+      --hud-good: #4ade80;
+      --hud-amber: #fbbf24;
+      --hud-accent: #60a5fa;
+      --hud-stroke: rgba(255, 255, 255, 0.08);
+      --hud-font: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+      --hud-font-ui: system-ui, -apple-system, "Segoe UI", "Noto Sans KR", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: linear-gradient(180deg, #7ec0ee 0%, #b9dffb 55%, #f4e4c1 80%, #d2a679 100%);
+      font-family: var(--hud-font-ui);
+      color: var(--hud-fg);
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #stage {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #stage > canvas {
+      display: block;
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    /* ---------- HUD layer ---------- */
+    #hud {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    .panel {
+      background: var(--hud-bg);
+      border: 1px solid var(--hud-stroke);
+      border-radius: 10px;
+      padding: 12px 14px;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+    }
+
+    /* speed / pitch (top-left) */
+    #hud-speed-panel {
+      position: absolute;
+      top: 18px;
+      left: 18px;
+      min-width: 200px;
+    }
+    #hud-speed {
+      font-family: var(--hud-font);
+      font-size: 38px;
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: -0.02em;
+      color: var(--hud-fg);
+      transition: color 0.15s ease;
+    }
+    #hud-speed.fast { color: var(--hud-amber); }
+    #hud-speed.danger { color: var(--hud-warn); }
+    #hud-speed small {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--hud-mute);
+      margin-left: 4px;
+      letter-spacing: 0;
+    }
+    #hud-pitch {
+      font-family: var(--hud-font);
+      font-size: 13px;
+      color: var(--hud-mute);
+      margin-top: 6px;
+    }
+    #hud-pitch strong {
+      color: var(--hud-fg);
+      font-weight: 600;
+      margin-right: 4px;
+    }
+    #hud-pitch.tilt-back strong { color: var(--hud-warn); }
+    #hud-pitch.tilt-fwd strong { color: var(--hud-accent); }
+
+    /* suspension bars (top-left below speed) */
+    #hud-suspension {
+      position: absolute;
+      top: 18px;
+      left: 240px;
+      min-width: 280px;
+    }
+    .susp-title {
+      font-family: var(--hud-font);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--hud-mute);
+      margin-bottom: 8px;
+    }
+    .susp-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+      font-family: var(--hud-font);
+      font-size: 11px;
+    }
+    .susp-row:last-child { margin-bottom: 0; }
+    .susp-label {
+      width: 24px;
+      color: var(--hud-mute);
+      font-weight: 600;
+    }
+    .susp-bar {
+      flex: 1;
+      height: 10px;
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: 5px;
+      overflow: hidden;
+      position: relative;
+    }
+    .susp-fill {
+      position: absolute;
+      top: 0; left: 0; bottom: 0;
+      width: 50%;
+      background: linear-gradient(90deg, var(--hud-good) 0%, var(--hud-amber) 60%, var(--hud-warn) 100%);
+      border-radius: 5px;
+      transition: width 0.05s linear;
+    }
+    .susp-val {
+      width: 38px;
+      text-align: right;
+      color: var(--hud-fg);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* controls (top-right) */
+    #hud-controls {
+      position: absolute;
+      top: 18px;
+      right: 18px;
+      min-width: 220px;
+    }
+    .ctrl-title {
+      font-family: var(--hud-font);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--hud-mute);
+      margin-bottom: 10px;
+    }
+    .ctrl-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+    .ctrl-row:last-child { margin-bottom: 0; }
+    .key {
+      font-family: var(--hud-font);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 7px;
+      min-width: 22px;
+      text-align: center;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-bottom-width: 2px;
+      border-radius: 4px;
+      color: var(--hud-fg);
+    }
+    .ctrl-row span:last-child {
+      margin-left: 6px;
+      color: var(--hud-mute);
+    }
+
+    /* bottom hint */
+    #hud-hint {
+      position: absolute;
+      bottom: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.78);
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+      text-align: center;
+      letter-spacing: 0.02em;
+    }
+
+    /* bottom-right stats */
+    #hud-stats {
+      position: absolute;
+      bottom: 18px;
+      right: 18px;
+      font-family: var(--hud-font);
+      font-size: 11px;
+      color: var(--hud-mute);
+      text-align: right;
+    }
+    #hud-stats span {
+      color: var(--hud-fg);
+      margin-left: 4px;
+    }
+
+    /* loading / error banner */
+    #banner {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      padding: 16px 24px;
+      background: rgba(0, 0, 0, 0.85);
+      color: #fff;
+      border-radius: 8px;
+      font-size: 14px;
+      z-index: 100;
+      display: none;
+    }
+    #banner.error { display: block; color: var(--hud-warn); }
+  </style>
+</head>
+<body>
+  <div id="stage"></div>
+
+  <div id="hud">
+    <div id="hud-speed-panel" class="panel">
+      <div id="hud-speed">0<small>km/h</small></div>
+      <div id="hud-pitch"><strong>0.0°</strong> pitch</div>
+    </div>
+
+    <div id="hud-suspension" class="panel">
+      <div class="susp-title">SUSPENSION</div>
+      <div class="susp-row">
+        <span class="susp-label">FL</span>
+        <div class="susp-bar"><div id="hud-susp-fl-bar" class="susp-fill"></div></div>
+        <span id="hud-susp-fl-val" class="susp-val">0.00</span>
+      </div>
+      <div class="susp-row">
+        <span class="susp-label">FR</span>
+        <div class="susp-bar"><div id="hud-susp-fr-bar" class="susp-fill"></div></div>
+        <span id="hud-susp-fr-val" class="susp-val">0.00</span>
+      </div>
+    </div>
+
+    <div id="hud-controls" class="panel">
+      <div class="ctrl-title">CONTROLS</div>
+      <div class="ctrl-row"><span class="key">←</span><span class="key">→</span><span>가속 / 후진</span></div>
+      <div class="ctrl-row"><span class="key">A</span><span class="key">D</span><span>동일</span></div>
+      <div class="ctrl-row"><span class="key">SPACE</span><span>핸드브레이크</span></div>
+      <div class="ctrl-row"><span class="key">R</span><span>리셋</span></div>
+      <div class="ctrl-row"><span class="key">C</span><span>카메라 추적 토글</span></div>
+    </div>
+
+    <div id="hud-hint">울퉁불퉁한 지형을 운전하세요 — 서스펜션이 충격을 흡수합니다</div>
+
+    <div id="hud-stats">Resets<span id="hud-reset-count">0</span>·State<span id="hud-state">IDLE</span></div>
+  </div>
+
+  <div id="banner"></div>
+
+  <script>
+  (function () {
+    'use strict';
+
+    // ============================================================
+    // 0. Pre-flight: ensure Matter + decomp loaded
+    // ============================================================
+    if (typeof window.Matter !== 'object') {
+      showBanner('Matter.js failed to load — check your network / CDN.', true);
+      throw new Error('Matter.js missing');
+    }
+    if (typeof window.decomp !== 'object') {
+      console.warn('[matter] poly-decomp missing — using convex fallback for terrain');
+    } else {
+      window.Matter.Common.setDecomp(window.decomp);
+    }
+
+    const M = window.Matter;
+
+    // ============================================================
+    // 1. Tunables
+    // ============================================================
+    const CFG = {
+      world: {
+        width: 1280,
+        height: 720,
+        terrainSpan: 5200,     // px along x
+        groundY: 500,          // baseline for terrain surface
+        bumpAmp: 55,           // primary amplitude (rolling hills)
+        bumpAmp2: 18,          // secondary octave (medium bumps)
+        bumpAmp3: 6,           // tertiary octave (chatter that the suspension must absorb)
+        bumpJitter: 2,
+      },
+      car: {
+        spawn: { x: 380, y: 360 },
+        chassis: { w: 140, h: 24, density: 0.0012 },
+        wheel: { r: 18, density: 0.0030, friction: 0.40, frictionStatic: 0.5, frictionAir: 0.02 },
+        suspension: {
+          stiffness: 0.85,     // FIRM — vertical and lateral control
+          damping: 0.40,
+          length: 42,          // LONGER (was 32) to compensate for the soft constraint's actual
+                                // position. With chassis weight compressing the spring by ~10 px,
+                                // actual distance = 32, gap = 14 px. With damping the car bobs
+                                // visibly on bumps while the springs are still firm enough to
+                                // hold the chassis steady laterally.
+          anchorOffset: { x: 48, y: 12 }, // anchor at chassis BOTTOM EDGE (h/2=12)
+        },
+      },
+      drive: {
+        driveForce: 0.011,     // moderate — car reaches ~8 px/frame on flat, ~3 px/frame uphill
+        coastDecay: 0.992,
+        brakeDecay: 0.86,
+        pitchForceFactor: 0.0022, // visible wheelie/dive
+        selfRightTorque: 0.06,   // rad/frame per radian of tilt (capped by chassisAngVelClamp)
+      },
+      physics: {
+        gravityScale: 0.0010,     // back to ~baseline (was 0.0009) so chassis settles
+                                // properly on the wheels
+        constraintIterations: 4,
+        timingTimeScale: 1.0,
+        chassisAngVelClamp: 0.18,
+      },
+    };
+
+    // ============================================================
+    // 2. Seeded RNG (Mulberry32) — deterministic terrain
+    // ============================================================
+    function mulberry32(seed) {
+      let s = seed >>> 0;
+      return function () {
+        s = (s + 0x6D2B79F5) >>> 0;
+        let t = s;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    // ============================================================
+    // 3. Engine + Render + Runner
+    // ============================================================
+    const engine = M.Engine.create({
+      gravity: { x: 0, y: 1, scale: CFG.physics.gravityScale },
+    });
+    engine.constraintIterations = CFG.physics.constraintIterations;
+
+    const render = M.Render.create({
+      element: document.getElementById('stage'),
+      engine: engine,
+      options: {
+        width: CFG.world.width,
+        height: CFG.world.height,
+        wireframes: false,
+        background: 'transparent', // sky drawn via CSS gradient on body
+        pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
+        showSleeping: false,
+        showDebug: false,
+        showBroadphase: false,
+        showBounds: false,
+        showVelocity: false,
+        showCollisions: false,
+        showSeparations: false,
+        showAxes: false,
+        showPositions: false,
+        showAngleIndicator: false,
+        showIds: false,
+      },
+    });
+
+    const runner = M.Runner.create();
+    M.Runner.run(runner, engine);
+
+    // ============================================================
+    // 4. World state containers
+    // ============================================================
+    const world = engine.world;
+    let terrain = null;
+    let car = null;     // { chassis, wheelL, wheelR, constraintL, constraintR, anchors: {...} }
+    let cameraFollow = true;
+    let resetCount = 0;
+
+    // diag object for QA introspection
+    window.__diag = {
+      engineReady: true,
+      terrainOk: false,
+      car: null,
+      keys: { left: false, right: false, brake: false },
+      resetCount: 0,
+      cameraFollow: true,
+    };
+
+    // ============================================================
+    // 5. Procedural terrain
+    // ============================================================
+    function buildTerrain(seed) {
+      const rng = mulberry32(seed);
+      const span = CFG.world.terrainSpan;
+      const step = 22; // ~ px between vertices
+      const verts = [];
+      const baseY = CFG.world.groundY;
+      const amp1 = CFG.world.bumpAmp;
+      const amp2 = CFG.world.bumpAmp2;
+      const amp3 = CFG.world.bumpAmp3;
+
+      // generate upper surface from x=0 to x=span
+      for (let x = -200; x <= span + 200; x += step) {
+        // mix of sinusoids + low-amplitude value noise
+        const n1 = Math.sin(x * 0.0075) * amp1;
+        const n2 = Math.sin(x * 0.028 + 1.3) * amp2;
+        const n3 = Math.sin(x * 0.11 + rng() * 6.28) * amp3;
+        const n4 = (rng() - 0.5) * CFG.world.bumpJitter;
+        const y = baseY + n1 + n2 + n3 + n4;
+        verts.push({ x: x, y: y });
+      }
+
+      // close polyline: down to bottom, back to start
+      verts.push({ x: span + 200, y: CFG.world.height + 200 });
+      verts.push({ x: -200, y: CFG.world.height + 200 });
+
+      // visual options
+      const renderOpts = {
+        isStatic: true,
+        friction: 0.92,
+        frictionStatic: 1.0,
+        label: 'terrain',
+        render: {
+          fillStyle: '#7a5a3a',
+          strokeStyle: '#4a3520',
+          lineWidth: 2,
+        },
+      };
+
+      // try fromVertices with decomp; fall back to rectangle chain
+      let body = null;
+      if (window.decomp) {
+        try {
+          // first vertex is the centroid of the polyline; matter will re-center, so we'll setPosition later
+          const cx = (verts[0].x + verts[verts.length - 2].x) / 2;
+          const cy = (verts[0].y + verts[verts.length - 1].y) / 2;
+          body = M.Bodies.fromVertices(cx, cy, [verts], renderOpts, true);
+        } catch (e) {
+          console.warn('[terrain] fromVertices threw:', e);
+        }
+      }
+
+      if (!body) {
+        // fallback: chain of static rectangle segments following the upper surface
+        const parts = [];
+        for (let i = 0; i < verts.length - 3; i++) {
+          const a = verts[i];
+          const b = verts[i + 1];
+          const mx = (a.x + b.x) / 2;
+          const my = (a.y + b.y) / 2;
+          const len = Math.hypot(b.x - a.x, b.y - a.y);
+          const ang = Math.atan2(b.y - a.y, b.x - a.x);
+          if (len < 4) continue;
+          const seg = M.Bodies.rectangle(mx, my + 60, len + 2, 120, {
+            isStatic: true,
+            angle: ang,
+            friction: 0.92,
+            frictionStatic: 1.0,
+            label: 'terrain',
+            render: {
+              fillStyle: '#7a5a3a',
+              strokeStyle: '#4a3520',
+              lineWidth: 1,
+            },
+          });
+          parts.push(seg);
+        }
+        body = M.Body.create({ isStatic: true, parts: parts, label: 'terrain' });
+        window.__diag.terrainOk = true;
+      } else {
+        window.__diag.terrainOk = true;
+      }
+
+      // add a grass strip on top of the surface
+      const grassParts = [];
+      for (let i = 0; i < verts.length - 3; i++) {
+        const a = verts[i];
+        const b = verts[i + 1];
+        const mx = (a.x + b.x) / 2;
+        const my = (a.y + b.y) / 2;
+        const len = Math.hypot(b.x - a.x, b.y - a.y);
+        const ang = Math.atan2(b.y - a.y, b.x - a.x);
+        if (len < 4) continue;
+        const seg = M.Bodies.rectangle(mx, my, len + 2, 4, {
+          isStatic: true,
+          angle: ang,
+          friction: 0.92,
+          frictionStatic: 1.0,
+          label: 'grass',
+          render: { fillStyle: '#4f7a2c', strokeStyle: '#2e4a18', lineWidth: 0 },
+        });
+        grassParts.push(seg);
+      }
+      if (grassParts.length) {
+        M.Composite.add(world, grassParts);
+      }
+
+      M.Composite.add(world, body);
+
+      // invisible walls to keep the car in the world
+      const wallOpts = { isStatic: true, render: { visible: false }, label: 'wall' };
+      const wallL = M.Bodies.rectangle(-100, CFG.world.height / 2, 20, CFG.world.height * 2, wallOpts);
+      const wallR = M.Bodies.rectangle(CFG.world.terrainSpan + 100, CFG.world.height / 2, 20, CFG.world.height * 2, wallOpts);
+      const wallF = M.Bodies.rectangle(CFG.world.terrainSpan / 2, -200, CFG.world.terrainSpan + 400, 20, wallOpts);
+      M.Composite.add(world, [wallL, wallR, wallF]);
+
+      return body;
+    }
+
+    // ============================================================
+    // 6. Car
+    // ============================================================
+    function buildCar(spawn) {
+      const cs = CFG.car.suspension.anchorOffset;
+      const filter = { group: -1 }; // chassis + wheels never collide with each other
+
+      const chassis = M.Bodies.rectangle(spawn.x, spawn.y, CFG.car.chassis.w, CFG.car.chassis.h, {
+        density: CFG.car.chassis.density,
+        friction: 0.2,
+        frictionAir: 0.008,
+        label: 'chassis',
+        collisionFilter: filter,
+        render: {
+          fillStyle: '#c0392b',
+          strokeStyle: '#7a1d12',
+          lineWidth: 2,
+        },
+      });
+
+      const wheelL = M.Bodies.circle(spawn.x - cs.x, spawn.y + cs.y + CFG.car.suspension.length, CFG.car.wheel.r, {
+        density: CFG.car.wheel.density,
+        friction: CFG.car.wheel.friction,
+        frictionStatic: CFG.car.wheel.frictionStatic,
+        frictionAir: CFG.car.wheel.frictionAir,
+        restitution: 0.08,
+        label: 'wheel',
+        collisionFilter: filter,
+        render: {
+          fillStyle: '#1a1a1a',
+          strokeStyle: '#000',
+          lineWidth: 2,
+        },
+      });
+      const wheelR = M.Bodies.circle(spawn.x + cs.x, spawn.y + cs.y + CFG.car.suspension.length, CFG.car.wheel.r, {
+        density: CFG.car.wheel.density,
+        friction: CFG.car.wheel.friction,
+        frictionStatic: CFG.car.wheel.frictionStatic,
+        frictionAir: CFG.car.wheel.frictionAir,
+        restitution: 0.08,
+        label: 'wheel',
+        collisionFilter: filter,
+        render: {
+          fillStyle: '#1a1a1a',
+          strokeStyle: '#000',
+          lineWidth: 2,
+        },
+      });
+
+// Soft suspension spring + damper. Wheel STARTS at the rest position (directly below
+      // the anchor by `length`) so the spring is at rest on frame 1. The spring length is
+      // a true length, so vertical motion is the spring's natural degree of freedom.
+      //
+      // VISUAL: `render.visible: false` — we don't draw the default constraint line because
+      // it goes from chassis-anchor → wheel-center, which would pass THROUGH the wheel and
+      // look like the spring is "inside" the wheel. Instead, the afterRender handler draws a
+      // custom spring from chassis-anchor down to the WHEEL TOP (14 px shorter than the
+      // physics line). The visible spring thus terminates ABOVE the wheel, not inside it.
+      const constraintL = M.Constraint.create({
+        bodyA: chassis,
+        bodyB: wheelL,
+        pointA: { x: -cs.x, y: cs.y },
+        pointB: { x: 0, y: 0 },
+        length: CFG.car.suspension.length,
+        stiffness: CFG.car.suspension.stiffness,
+        damping: CFG.car.suspension.damping,
+        render: { visible: false },
+      });
+      const constraintR = M.Constraint.create({
+        bodyA: chassis,
+        bodyB: wheelR,
+        pointA: { x: cs.x, y: cs.y },
+        pointB: { x: 0, y: 0 },
+        length: CFG.car.suspension.length,
+        stiffness: CFG.car.suspension.stiffness,
+        damping: CFG.car.suspension.damping,
+        render: { visible: false },
+      });
+
+      M.Composite.add(world, [chassis, wheelL, wheelR, constraintL, constraintR]);
+
+      const c = {
+        chassis: chassis,
+        wheelL: wheelL,
+        wheelR: wheelR,
+        constraintL: constraintL,
+        constraintR: constraintR,
+        anchors: {
+          L: { x: -cs.x, y: cs.y },
+          R: { x: cs.x, y: cs.y },
+        },
+      };
+      return c;
+    }
+
+    function buildWorld() {
+      terrain = buildTerrain(1337);
+      car = buildCar(CFG.car.spawn);
+      window.__diag.car = car;
+    }
+
+    function destroyWorld() {
+      // deep clear removes compound body children (terrain parts, etc.)
+      M.Composite.clear(world, false, true);
+      terrain = null;
+      car = null;
+      window.__diag.car = null;
+    }
+
+    function resetWorld() {
+      destroyWorld();
+      buildWorld();
+      resetCount += 1;
+      window.__diag.resetCount = resetCount;
+    }
+
+    // ============================================================
+    // 7. Input
+    // ============================================================
+    const keys = { left: false, right: false, brake: false, camera: false };
+    let lastResetAt = 0;
+
+    window.addEventListener('keydown', (e) => {
+      if (e.repeat) return;
+      const k = e.code;
+      if (k === 'ArrowLeft' || k === 'KeyA') { keys.left = true; e.preventDefault(); }
+      else if (k === 'ArrowRight' || k === 'KeyD') { keys.right = true; e.preventDefault(); }
+      else if (k === 'Space') { keys.brake = true; e.preventDefault(); }
+      else if (k === 'KeyR') {
+        const now = performance.now();
+        if (now - lastResetAt > 200) {
+          lastResetAt = now;
+          resetWorld();
+        }
+        e.preventDefault();
+      }
+      else if (k === 'KeyC') { cameraFollow = !cameraFollow; window.__diag.cameraFollow = cameraFollow; e.preventDefault(); }
+      window.__diag.keys = { left: keys.left, right: keys.right, brake: keys.brake };
+    });
+
+    window.addEventListener('keyup', (e) => {
+      const k = e.code;
+      if (k === 'ArrowLeft' || k === 'KeyA') { keys.left = false; e.preventDefault(); }
+      else if (k === 'ArrowRight' || k === 'KeyD') { keys.right = false; e.preventDefault(); }
+      else if (k === 'Space') { keys.brake = false; e.preventDefault(); }
+      window.__diag.keys = { left: keys.left, right: keys.right, brake: keys.brake };
+    });
+
+    // also expose globally for QA
+    window.__keys = keys;
+
+    // ============================================================
+    // 8. Driving physics — direct chassis force + natural wheel spin via friction
+    // ============================================================
+    // We apply a forward/backward force directly to the chassis CoM. The wheels are
+    // NOT torque-driven; instead, the chassis drags the wheels along the ground and
+    // the friction between wheel & terrain naturally spins the wheels up. This is
+    // the standard 2D arcade approach and avoids the wheel-spinning-in-place problem
+    // caused by direct torque application (friction can't match high torque values).
+    function applyDriving() {
+      if (!car) return;
+      const c = car.chassis;
+      const wheels = [car.wheelL, car.wheelR];
+
+      // Apply drive force to the chassis
+      if (keys.right) {
+        M.Body.applyForce(c, c.position, { x: CFG.drive.driveForce, y: 0 });
+      } else if (keys.left) {
+        M.Body.applyForce(c, c.position, { x: -CFG.drive.driveForce * 0.55, y: 0 });
+      }
+      // Apply brake force (deceleration by friction-like drag)
+      if (keys.brake) {
+        const drag = 0.92;
+        M.Body.setVelocity(c, { x: c.velocity.x * drag, y: c.velocity.y });
+        for (const w of wheels) {
+          M.Body.setAngularVelocity(w, w.angularVelocity * drag);
+        }
+      } else {
+        // Coast: gentle natural decay (already in frictionAir but add a bit)
+        for (const w of wheels) {
+          if (Math.abs(w.angularVelocity) < 0.001) {
+            M.Body.setAngularVelocity(w, 0);
+          } else {
+            M.Body.setAngularVelocity(w, w.angularVelocity * CFG.drive.coastDecay);
+          }
+        }
+      }
+
+      // chassis pitch — apply a horizontal force at a vertical offset to create a torque
+      // In Matter's y-down convention: τ_z = -r_y * F_x. With force point above CoM (r_y < 0):
+      //   - F_x > 0 (forward force) → τ_z > 0 → CCW → front of car (right) lifts → WHEELIE
+      //   - F_x < 0 (backward force) → τ_z < 0 → CW → front of car (right) dives
+      const force = CFG.drive.pitchForceFactor * c.mass;
+      const offset = 18; // px above CoM
+      if (keys.right) {
+        M.Body.applyForce(c,
+          { x: c.position.x, y: c.position.y - offset },
+          { x: +force, y: 0 }
+        );
+      } else if (keys.left) {
+        M.Body.applyForce(c,
+          { x: c.position.x, y: c.position.y - offset },
+          { x: -force * 0.6, y: 0 }
+        );
+      }
+      // self-righting: directly nudge angular velocity toward -c.angle * factor.
+      // The clamp below will then cap it. This is a "soft" torsional spring effect.
+      // Without this, wheel impacts on big bumps can flip the car (wheels are heavy).
+      const rightingDelta = -c.angle * CFG.drive.selfRightTorque;
+      M.Body.setAngularVelocity(c, c.angularVelocity + rightingDelta);
+    }
+
+    // ============================================================
+    // 9. Chassis anti-flip clamp + wheel alignment + sleep prevention
+    // ============================================================
+    // The soft spring only enforces distance anchor↔wheel, not direction. Over time, the
+    // wheel can drift sideways (the spring allows any point on a circle of radius `length`
+    // around the anchor). This creates a "trailing" wheel look that's wrong for a car.
+    //
+    // We add a virtual HORIZONTAL SPRING: each frame, compute the wheel's horizontal offset
+    // from its anchor (in chassis-local frame, after rotation) and apply a restoring force.
+    // This pulls the wheel back to "directly below the anchor" while still allowing vertical
+    // suspension travel.
+    function applyWheelAlignment() {
+      if (!car) return;
+      const c = car.chassis;
+      const cs = CFG.car.suspension.anchorOffset;
+      const cosA = Math.cos(c.angle);
+      const sinA = Math.sin(c.angle);
+      // The soft Matter Constraint only enforces distance, not direction, so the wheel can
+      // drift along a circle of radius `length` around the anchor. Two corrections:
+      //   1. X-alignment via Body.translate — kinematic (no force) snap toward anchor.x
+      //   2. Y-clamp — if the wheel ever ends up ABOVE the anchor (e.g., the spring got
+      //      "flipped" by a strong bump), force it back below. The spring at rest length
+      //      has no force, so without this clamp the wheel can stay floating in mid-air.
+      const maxStep = 5.0;
+
+      function alignOne(wheel, axLocal) {
+        const ax = c.position.x + cosA * axLocal - sinA * cs.y;
+        const ay = c.position.y + sinA * axLocal + cosA * cs.y;
+        // 1. Snap wheel x toward anchor x (horizontal alignment)
+        const dx = ax - wheel.position.x;
+        if (Math.abs(dx) > 0.5) {
+          const correction = Math.sign(dx) * Math.min(Math.abs(dx), maxStep);
+          M.Body.translate(wheel, { x: correction, y: 0 });
+        }
+        // 2. Clamp wheel y so it can never be above the anchor (prevent floating)
+        if (wheel.position.y < ay - 0.5) {
+          M.Body.setPosition(wheel, { x: wheel.position.x, y: ay + 0.5 });
+          M.Body.setVelocity(wheel, { x: wheel.velocity.x * 0.5, y: Math.max(0, wheel.velocity.y) });
+        }
+      }
+
+      alignOne(car.wheelL, -cs.x);
+      alignOne(car.wheelR, +cs.x);
+    }
+
+    // Track-bar / anti-sway: small kinematic nudge of the chassis toward the wheel midpoint
+    // each frame. The crucial detail is to NOT zero the chassis velocity — doing so would
+    // kill driving because the drive force couldn't accumulate. Instead we only nudge the
+    // position by max 0.4 px/frame. The chassis can drive forward freely (drive force is
+    // ~0.011/frame, much larger than the 0.4 px nudge), and the slow lateral drift gets
+    // corrected over time without affecting horizontal driving motion.
+    function applyChassisCentering() {
+      if (!car) return;
+      const c = car.chassis;
+      const wL = car.wheelL;
+      const wR = car.wheelR;
+      const wheelMidX = (wL.position.x + wR.position.x) / 2;
+      const dx = wheelMidX - c.position.x;
+      if (Math.abs(dx) > 0.3) {
+        const correction = Math.sign(dx) * Math.min(Math.abs(dx), 0.4);
+        M.Body.translate(c, { x: correction, y: 0 });
+        // NOTE: do NOT call setVelocity here — that would prevent the chassis from
+        // accumulating drive-induced horizontal motion.
+      }
+    }
+
+    M.Events.on(engine, 'beforeUpdate', () => {
+      applyDriving();
+      applyWheelAlignment();
+      applyChassisCentering();
+      if (!car) return;
+      const c = car.chassis;
+      if (Math.abs(c.angularVelocity) > CFG.physics.chassisAngVelClamp) {
+        M.Body.setAngularVelocity(c, Math.sign(c.angularVelocity) * CFG.physics.chassisAngVelClamp);
+      }
+      // keep the car awake while driving
+      if (keys.left || keys.right || keys.brake) {
+        M.Body.set(car.chassis, { isSleeping: false });
+        M.Body.set(car.wheelL, { isSleeping: false });
+        M.Body.set(car.wheelR, { isSleeping: false });
+      }
+    });
+
+    // ============================================================
+    // 10. Camera follow (persistent ctx.translate)
+    // ============================================================
+    // The sky is drawn via CSS body background — canvas is transparent.
+    // We translate the canvas context so world bodies appear shifted; the chassis is kept
+    // near screen-center. The translate persists across body drawing and is restored in
+    // afterRender for the next frame.
+
+    function computeCameraOffset() {
+      if (!car || !cameraFollow) return null;
+      const worldX = car.chassis.position.x;
+      const worldY = car.chassis.position.y;
+      // target chassis screen position: 35% across, 55% down (so horizon visible)
+      const targetScreenX = render.options.width * 0.35;
+      const targetScreenY = render.options.height * 0.58;
+      return {
+        x: targetScreenX - worldX,
+        y: targetScreenY - worldY,
+      };
+    }
+
+    let _camActive = false;
+
+    M.Events.on(render, 'beforeRender', () => {
+      if (_camActive) {
+        // shouldn't happen, but reset to be safe
+        render.context.restore();
+        _camActive = false;
+      }
+      const off = computeCameraOffset();
+      if (off) {
+        render.context.save();
+        render.context.translate(off.x, off.y);
+        _camActive = true;
+      }
+    });
+
+    // Custom suspension rendering — drawn WHILE the camera translate is still active so the
+    // springs track the chassis in world space.
+    function drawSuspensionSprings(ctx) {
+      if (!car) return;
+      const cs = CFG.car.suspension.anchorOffset;
+      const wR = CFG.car.wheel.r;
+      const cosA = Math.cos(car.chassis.angle);
+      const sinA = Math.sin(car.chassis.angle);
+
+      function drawOne(wheel, axLocal) {
+        // anchor world position (chassis-local → world)
+        const ax = car.chassis.position.x + cosA * axLocal - sinA * cs.y;
+        const ay = car.chassis.position.y + sinA * axLocal + cosA * cs.y;
+        // wheel TOP world position — where the visible spring should END
+        const wx = wheel.position.x;
+        const wy = wheel.position.y - wR;
+        // line geometry from anchor to wheel top
+        const dx = wx - ax;
+        const dy = wy - ay;
+        const len = Math.hypot(dx, dy);
+        if (len < 1) return;
+        // perpendicular unit vector (for the coil zigzag amplitude direction)
+        const px = -dy / len;
+        const py =  dx / len;
+
+        // compression → color (extended = blue/cyan, compressed = amber/red)
+        const restTopDistance = CFG.car.suspension.length - wR;
+        const dTop = len;
+        const compression = (restTopDistance - dTop) / 8;
+        const t = Math.max(-1, Math.min(1, compression));
+        const r = Math.round(96 + (240 - 96) * Math.max(0, t));
+        const g = Math.round(165 + (170 - 165) * Math.max(0, t) + (60 - 165) * Math.max(0, -t));
+        const b = Math.round(250 + (60 - 250) * Math.max(0, t));
+        const cssCol = `rgba(${r}, ${g}, ${b}, 0.95)`;
+
+        // COIL GEOMETRY — a sinusoid perpendicular to the line axis.
+        // 4 turns over the line length, amplitude 3.5 px. Looks like a real spring coil
+        // instead of a straight connecting rod. The zigzag's wave count adapts to the
+        // spring's current length so compression/extension are visible.
+        const coils = Math.max(2.5, len / 8);
+        const amp = 3.5;
+        const stepsPerCoil = 12;
+        const totalSteps = Math.max(10, Math.round(coils * stepsPerCoil));
+
+        // 1. SHOCK ABSORBER BODY — a vertical "cylinder" rectangle behind the spring,
+        //    from anchor down 60% of the line length, half-width 5px. Suggests the hydraulic
+        //    damper inside the suspension strut.
+        const bodyEndT = 0.55;
+        const bx = ax + dx * bodyEndT;
+        const by = ay + dy * bodyEndT;
+        ctx.save();
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.30)`;
+        ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.55)`;
+        ctx.lineWidth = 1.2;
+        // perpendicular half-width 5px (cylinder radius)
+        const bw = 5;
+        // draw a rotated rectangle (parallelogram) representing the shock body
+        ctx.beginPath();
+        ctx.moveTo(ax + px * bw, ay + py * bw);
+        ctx.lineTo(ax - px * bw, ay - py * bw);
+        ctx.lineTo(bx - px * bw, by - py * bw);
+        ctx.lineTo(bx + px * bw, by + py * bw);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // 2. COILED SPRING — sinusoidal line from anchor to wheel top.
+        //    Drawn over the shock body so it looks like a coil-wrapped strut.
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        for (let i = 1; i <= totalSteps; i++) {
+          const t01 = i / totalSteps;
+          const baseX = ax + dx * t01;
+          const baseY = ay + dy * t01;
+          const wave = Math.sin(t01 * coils * Math.PI * 2);
+          ctx.lineTo(baseX + px * wave * amp, baseY + py * wave * amp);
+        }
+        ctx.strokeStyle = cssCol;
+        ctx.lineWidth = 2.2;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+
+        // 3. END CAPS — small circles at the anchor (chassis side) and wheel top.
+        ctx.fillStyle = cssCol;
+        ctx.beginPath();
+        ctx.arc(ax, ay, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(wx, wy, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+      }
+
+      drawOne(car.wheelL, -cs.x);
+      drawOne(car.wheelR, +cs.x);
+    }
+
+    M.Events.on(render, 'afterRender', () => {
+      // 1. Custom suspension rendering — must happen BEFORE camera restore so the lines
+      //    track the world (chassis anchor + wheel top) rather than fixed screen coords.
+      drawSuspensionSprings(render.context);
+      // 2. Restore camera transform for the next frame.
+      if (_camActive) {
+        render.context.restore();
+        _camActive = false;
+      }
+    });
+
+    // ============================================================
+    // 12. HUD updates
+    // ============================================================
+    const elSpeed = document.getElementById('hud-speed');
+    const elPitch = document.getElementById('hud-pitch');
+    const elSuspFlBar = document.getElementById('hud-susp-fl-bar');
+    const elSuspFrBar = document.getElementById('hud-susp-fr-bar');
+    const elSuspFlVal = document.getElementById('hud-susp-fl-val');
+    const elSuspFrVal = document.getElementById('hud-susp-fr-val');
+    const elResetCount = document.getElementById('hud-reset-count');
+    const elState = document.getElementById('hud-state');
+
+    function computeCompression(wheel, anchorLocal) {
+      const c = car ? car.chassis : null;
+      if (!c) return 0;
+      // anchor world position (rotated by chassis angle)
+      const cos = Math.cos(c.angle), sin = Math.sin(c.angle);
+      const ax = c.position.x + cos * anchorLocal.x - sin * anchorLocal.y;
+      const ay = c.position.y + sin * anchorLocal.x + cos * anchorLocal.y;
+      // distance from chassis anchor to wheel center
+      const d = Math.hypot(wheel.position.x - ax, wheel.position.y - ay);
+      // Spring rest length is 24 (anchor at chassis bottom, wheel center directly below).
+      //   d = 24 → at rest (bar ≈ 0.5)
+      //   d < 24 → wheel pulled UP (compressed suspension, bar higher)
+      //   d > 24 → wheel hanging DOWN (extended suspension, bar lower)
+      // Map d ∈ [10, 38] → bar ∈ [1, 0]. Rest d=24 → bar = 0.58.
+      return Math.min(1, Math.max(0, (38 - d) / 28));
+    }
+
+    function updateHUD() {
+      if (!car) return;
+      const c = car.chassis;
+      // speed (px/s → km/h). px ~= 0.05 m (1m = 20px), velocity is px/step ≈ px/16.67ms
+      const v = Math.hypot(c.velocity.x, c.velocity.y);
+      const kmh = Math.round(v * 60 * 3.6 * 0.05);
+      elSpeed.firstChild.nodeValue = String(kmh);
+      elSpeed.classList.toggle('fast', kmh >= 90);
+      elSpeed.classList.toggle('danger', kmh >= 160);
+      // pitch
+      const deg = c.angle * 180 / Math.PI;
+      const degStr = (deg >= 0 ? '+' : '') + deg.toFixed(1) + '°';
+      elPitch.firstChild.firstChild.nodeValue = degStr;
+      elPitch.classList.toggle('tilt-back', deg < -3);
+      elPitch.classList.toggle('tilt-fwd', deg > 3);
+      // suspension
+      const compL = computeCompression(car.wheelL, car.anchors.L);
+      const compR = computeCompression(car.wheelR, car.anchors.R);
+      elSuspFlBar.style.width = (compL * 100).toFixed(1) + '%';
+      elSuspFrBar.style.width = (compR * 100).toFixed(1) + '%';
+      elSuspFlVal.textContent = compL.toFixed(2);
+      elSuspFrVal.textContent = compR.toFixed(2);
+      // state
+      let state = 'IDLE';
+      if (keys.brake) state = 'BRAKE';
+      else if (keys.right) state = 'DRIVE';
+      else if (keys.left) state = 'REVERSE';
+      else if (Math.abs(c.velocity.x) > 0.5) state = 'COAST';
+      if (elState.textContent !== state) elState.textContent = state;
+      // resets
+      elResetCount.textContent = String(resetCount);
+    }
+
+    M.Events.on(render, 'afterRender', () => {
+      updateHUD();
+    });
+
+    // ============================================================
+    // 13. Banner helper
+    // ============================================================
+    function showBanner(msg, isError) {
+      const el = document.getElementById('banner');
+      el.textContent = msg;
+      el.classList.toggle('error', !!isError);
+      if (!isError) {
+        setTimeout(() => { el.classList.remove('error'); el.textContent = ''; }, 2500);
+      }
+    }
+
+    // ============================================================
+    // 14. Boot
+    // ============================================================
+    try {
+      buildWorld();
+      M.Render.run(render);
+      console.log('[matter] engine ready — terrain length=' + CFG.world.terrainSpan + 'px, gravity=' + CFG.physics.gravityScale);
+    } catch (e) {
+      console.error('[matter] boot failed:', e);
+      showBanner('Simulation failed to boot: ' + e.message, true);
+    }
+
+    // Expose for tests
+    window.__sim = {
+      engine, render, world,
+      get car() { return car; },
+      get terrain() { return terrain; },
+      reset: resetWorld,
+      CFG: CFG,
+    };
+  })();
+  </script>
+</body>
+</html>

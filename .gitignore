@@ -1,0 +1,26 @@
+# Tool artifacts
+.omo/
+.playwright-mcp/
+.codegraph/
+
+# Local QA screenshots (regenerable — never commit)
+s?-*.png
+fix*-*.png
+final-*.png
+screenshot-*.png
+
+# OS / editor
+.DS_Store
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+npm-debug.log*
