@@ -10,7 +10,7 @@
 
 ## 🎬 라이브 데모
 
-> **👉 [https://offroad-suspension.vercel.app/](https://offroad-suspension.vercel.app/)** — 브라우저에서 바로 실행 (60fps, Matter.js CDN)
+> **👉 [https://sigco3111.github.io/offroad-suspension/](https://sigco3111.github.io/offroad-suspension/)** — 브라우저에서 바로 실행 (60fps, Matter.js CDN)
 
 | | |
 |---|---|
