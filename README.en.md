@@ -10,11 +10,11 @@ A 2D off-road car driving over jagged cliff terrain. **Spring/damper (Shock Abso
 
 ## 🎬 Live Demo
 
-> **👉 [https://offroad-suspension.vercel.app/](https://offroad-suspension.vercel.app/)** — Run directly in the browser (60fps, Matter.js CDN)
+> **👉 [https://sigco3111.github.io/offroad-suspension/](https://sigco3111.github.io/offroad-suspension/)** — Run directly in the browser (60fps, Matter.js CDN)
 
 | | |
 |---|---|
-| ![Demo](https://img.shields.io/badge/Live-Demo-7C3AED?style=for-the-badge&logo=vercel&logoColor=white) | [![Repo](https://img.shields.io/badge/GitHub-sigco3111%2Foffroad--suspension-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/sigco3111/offroad-suspension) |
+| ![Demo](https://img.shields.io/badge/Live-Demo-222222?style=for-the-badge&logo=githubpages&logoColor=white) | [![Repo](https://img.shields.io/badge/GitHub-sigco3111%2Foffroad--suspension-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/sigco3111/offroad-suspension) |
 | ![Status](https://img.shields.io/badge/Status-Live-22C55E?style=flat-square) | ![Stack](https://img.shields.io/badge/Stack-Matter.js-F7DF1E?style=flat-square&logo=javascript&logoColor=black) |
 | ![License](https://img.shields.io/badge/License-MIT-F1C40F?style=flat-square) | ![Deps](https://img.shields.io/badge/Dependencies-2_CDN-9CA3AF?style=flat-square) |
 
@@ -73,7 +73,7 @@ Apply torque to wheels for drive, use Body.setAngularVelocity for spin.
 
 ## 🚀 Quick Start
 
-### Option 1: Live demo (Vercel, easiest)
+### Option 1: Live demo (GitHub Pages, easiest)
 Open the URL in the "Live Demo" section above. Both CDN scripts load automatically.
 
 ### Option 2: Open directly in a browser
@@ -205,7 +205,7 @@ Each frame, Matter.Engine.update():
 | Item | Value |
 |---|---|
 | **Local index.html** | 40,632 B |
-| **Vercel alias response** | HTTP 200 · 40,632 B (bit-perfect match) |
+| **GitHub Pages response** | HTTP 200 · 40,632 B (bit-perfect match) |
 | **Dependencies** | matter-js 0.20.0, poly-decomp 0.3.0 (jsDelivr CDN) |
 | **Rendering** | Canvas 2D, 60fps (Matter.Render) |
 | **Physics step** | `Engine.update()` 60Hz |
@@ -220,7 +220,7 @@ Each frame, Matter.Engine.update():
 | 1 | 2026-07-08 17:00 | Coding-mission scaffold — README + placeholder index.html |
 | 2 | 2026-07-08 17:55 | OpenCode built the Matter.js simulator body (s1~s4 four-stage debug) |
 | 3 | 2026-07-09 06:50 | fix1~fix22 — spring/damper stabilisation + trackbar added, fully settled |
-| 4 | 2026-07-09 08:55 | Vercel deploy + multi-layer README v1.0 (current) |
+| 4 | 2026-07-09 08:55 | Initial deploy + multi-layer README v1.0 (current) |
 
 ---
 

@@ -14,7 +14,7 @@
 
 | | |
 |---|---|
-| ![Demo](https://img.shields.io/badge/Live-Demo-7C3AED?style=for-the-badge&logo=vercel&logoColor=white) | [![Repo](https://img.shields.io/badge/GitHub-sigco3111%2Foffroad--suspension-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/sigco3111/offroad-suspension) |
+| ![Demo](https://img.shields.io/badge/Live-Demo-222222?style=for-the-badge&logo=githubpages&logoColor=white) | [![Repo](https://img.shields.io/badge/GitHub-sigco3111%2Foffroad--suspension-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/sigco3111/offroad-suspension) |
 | ![Status](https://img.shields.io/badge/Status-Live-22C55E?style=flat-square) | ![Stack](https://img.shields.io/badge/Stack-Matter.js-F7DF1E?style=flat-square&logo=javascript&logoColor=black) |
 | ![License](https://img.shields.io/badge/License-MIT-F1C40F?style=flat-square) | ![Deps](https://img.shields.io/badge/Dependencies-2_CDN-9CA3AF?style=flat-square) |
 
@@ -73,7 +73,7 @@ Apply torque to wheels for drive, use Body.setAngularVelocity for spin.
 
 ## 🚀 실행 방법
 
-### 방법 1: 라이브 데모 (Vercel, 가장 간단)
+### 방법 1: 라이브 데모 (GitHub Pages, 가장 간단)
 위 "라이브 데모" 섹션의 URL을 브라우저에서 열기. CDN 2개가 자동 로드됩니다.
 
 ### 방법 2: 브라우저로 직접 열기
@@ -205,7 +205,7 @@ const CONFIG = {
 | 항목 | 값 |
 |---|---|
 | **로컬 index.html** | 40,632 B |
-| **Vercel alias 응답** | HTTP 200 · 40,632 B (bit-perfect match) |
+| **GitHub Pages 응답** | HTTP 200 · 40,632 B (bit-perfect match) |
 | **의존성** | matter-js 0.20.0, poly-decomp 0.3.0 (jsDelivr CDN) |
 | **렌더링** | Canvas 2D, 60fps (Matter.Render) |
 | **물리 step** | `Engine.update()` 60Hz |
@@ -220,7 +220,7 @@ const CONFIG = {
 | 1차 | 2026-07-08 17:00 | 코딩미션 scaffolding — README + placeholder index.html |
 | 2차 | 2026-07-08 17:55 | OpenCode가 Matter.js 시뮬레이터 본체 구현 (s1~s4 4단계 디버깅) |
 | 3차 | 2026-07-09 06:50 | fix1~fix22 — 스프링/댐퍼 안정화 + trackbar 추가, 완전 정착 |
-| 4차 | 2026-07-09 08:55 | Vercel 배포 + README 다층 v1.0 (현재) |
+| 4차 | 2026-07-09 08:55 | 초기 배포 + README 다층 v1.0 (현재) |
 
 ---
 
